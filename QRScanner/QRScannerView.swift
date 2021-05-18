@@ -1,9 +1,8 @@
 //
 //  QRScannerView.swift
-//  QRScanner
+//  VISIKARD
 //
-//  Created by wbi on 2019/10/16.
-//  Copyright © 2019 Mercari, Inc. All rights reserved.
+//  Created by ban on 18/05/2021.
 //
 
 import UIKit
@@ -25,18 +24,18 @@ public extension QRScannerViewDelegate where Self: AnyObject {
 // MARK: - QRScannerView
 @IBDesignable
 public class QRScannerView: UIView {
-
+    
     // MARK: - Input
     public struct Input {
         let focusImage: UIImage?
         let focusImagePadding: CGFloat?
         let animationDuration: Double?
         let isBlurEffectEnabled: Bool?
-
+        
         public static var `default`: Input {
             return .init(focusImage: nil, focusImagePadding: nil, animationDuration: nil, isBlurEffectEnabled: nil)
         }
-
+        
         public init(focusImage: UIImage? = nil, focusImagePadding: CGFloat? = nil, animationDuration: Double? = nil, isBlurEffectEnabled: Bool? = nil) {
             self.focusImage = focusImage
             self.focusImagePadding = focusImagePadding
@@ -44,22 +43,35 @@ public class QRScannerView: UIView {
             self.isBlurEffectEnabled = isBlurEffectEnabled
         }
     }
-
+    
     // MARK: - Public Properties
     @IBInspectable
     public var focusImage: UIImage?
-
+    
     @IBInspectable
     public var focusImagePadding: CGFloat = 8.0
-
+    
     @IBInspectable
     public var animationDuration: Double = 0.5
-
+    
     @IBInspectable
     public var isBlurEffectEnabled: Bool = false
-
+    
+    public override func awakeFromNib() {
+        super.awakeFromNib()
+        updateFocusImageView()
+        NotificationCenter.default.addObserver(self, selector: #selector(setCameraOrientation), name: NSNotification.Name.UIDeviceOrientationDidChange, object: nil)
+        
+    }
+    
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        updateFocusImageView()
+        setCameraOrientation()
+    }
+    
     // MARK: - Public
-
+    
     public func configure(delegate: QRScannerViewDelegate, input: Input = .default) {
         self.delegate = delegate
         if let focusImage = input.focusImage {
@@ -74,13 +86,13 @@ public class QRScannerView: UIView {
         if let isBlurEffectEnabled = input.isBlurEffectEnabled {
             self.isBlurEffectEnabled = isBlurEffectEnabled
         }
-
+        
         configureSession()
         addPreviewLayer()
         setupBlurEffectView()
         setupImageViews()
     }
-
+    
     public func startRunning() {
         guard isAuthorized() else { return }
         guard !session.isRunning else { return }
@@ -90,7 +102,7 @@ public class QRScannerView: UIView {
             self?.session.startRunning()
         }
     }
-
+    
     public func stopRunning() {
         guard session.isRunning else { return }
         videoDataQueue.async { [weak self] in
@@ -99,7 +111,7 @@ public class QRScannerView: UIView {
         metadataOutputEnable = false
         videoDataOutputEnable = false
     }
-
+    
     public func rescan() {
         guard isAuthorized() else { return }
         if isBlurEffectEnabled {
@@ -112,20 +124,20 @@ public class QRScannerView: UIView {
         videoDataOutputEnable = false
         metadataOutputEnable = true
     }
-
+    
     public func setTorchActive(isOn: Bool) {
         assert(Thread.isMainThread)
         
         guard let videoDevice = AVCaptureDevice.default(for: .video),
-            videoDevice.hasTorch, videoDevice.isTorchAvailable,
-            (metadataOutputEnable || videoDataOutputEnable) else {
-                return
+              videoDevice.hasTorch, videoDevice.isTorchAvailable,
+              (metadataOutputEnable || videoDataOutputEnable) else {
+            return
         }
         try? videoDevice.lockForConfiguration()
         videoDevice.torchMode = isOn ? .on : .off
         videoDevice.unlockForConfiguration()
     }
-
+    
     deinit {
         setTorchActive(isOn: false)
         focusImageView.removeFromSuperview()
@@ -135,9 +147,9 @@ public class QRScannerView: UIView {
         removePreviewLayer()
         torchActiveObservation = nil
     }
-
+    
     // MARK: - Private
-
+    
     private weak var delegate: QRScannerViewDelegate?
     private let metadataQueue = DispatchQueue(label: "metadata.session.qrreader.queue")
     private let videoDataQueue = DispatchQueue(label: "videoData.session.qrreader.queue")
@@ -157,15 +169,15 @@ public class QRScannerView: UIView {
         blurEffectView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         return blurEffectView
     }()
-
+    
     private enum AuthorizationStatus {
         case authorized, notDetermined, restrictedOrDenied
     }
-
+    
     private func isAuthorized() -> Bool {
         return authorizationStatus() == .authorized
     }
-
+    
     private func authorizationStatus() -> AuthorizationStatus {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
@@ -183,52 +195,97 @@ public class QRScannerView: UIView {
             return .restrictedOrDenied
         }
     }
-
+    
+    @objc private func setCameraOrientation() {
+        if let layer = self.previewLayer {
+            layer.frame = self.bounds
+            if let connection =  self.previewLayer?.connection  {
+                
+                let orientation = UIApplication.shared.statusBarOrientation
+                
+                let previewLayerConnection : AVCaptureConnection = connection
+                
+                if previewLayerConnection.isVideoOrientationSupported {
+                    
+                    switch (orientation) {
+                    case .portrait: updatePreviewLayer(layer: previewLayerConnection, orientation: .portrait)
+                        
+                        break
+                        
+                    case .landscapeRight: updatePreviewLayer(layer: previewLayerConnection, orientation: .landscapeRight)
+                        
+                        break
+                        
+                    case .landscapeLeft: updatePreviewLayer(layer: previewLayerConnection, orientation: .landscapeLeft)
+                        
+                        break
+                        
+                    case .portraitUpsideDown: updatePreviewLayer(layer: previewLayerConnection, orientation: .portraitUpsideDown)
+                        
+                        break
+                        
+                    default: updatePreviewLayer(layer: previewLayerConnection, orientation: .portrait)
+                        
+                        break
+                    }
+                }
+            }
+        }
+    }
+    
+    private func updatePreviewLayer(layer: AVCaptureConnection, orientation: AVCaptureVideoOrientation) {
+        
+        layer.videoOrientation = orientation
+        
+        previewLayer?.frame = self.bounds
+        
+    }
+    
     private func configureSession() {
         // check device initialize
         guard let videoDevice = AVCaptureDevice.default(for: .video) else {
             failure(.deviceFailure(.videoUnavailable))
             return
         }
-
+        
         // check input
         guard let videoInput = try? AVCaptureDeviceInput(device: videoDevice), session.canAddInput(videoInput) else {
             failure(.deviceFailure(.inputInvalid))
             return
         }
-
+        
         // check metadata output
         guard session.canAddOutput(metadataOutput) else {
             failure(.deviceFailure(.metadataOutputFailure))
             return
         }
-
+        
         // check videoData output
         guard session.canAddOutput(videoDataOutput) else {
             failure(.deviceFailure(.videoDataOutputFailure))
             return
         }
-
+        
         // commit session
         session.beginConfiguration()
         session.addInput(videoInput)
         metadataOutput.setMetadataObjectsDelegate(self, queue: metadataQueue)
         session.addOutput(metadataOutput)
         metadataOutput.metadataObjectTypes = [.qr]
-
+        
         videoDataOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         videoDataOutput.setSampleBufferDelegate(self, queue: videoDataQueue)
         session.addOutput(videoDataOutput)
-
+        
         session.commitConfiguration()
-
+        
         // torch observation
         if videoDevice.hasTorch {
             torchActiveObservation = videoDevice.observe(\.isTorchActive, options: .new) { [weak self] _, change in
                 self?.didChangeTorchActive(isOn: change.newValue ?? false)
             }
         }
-
+        
         // start running
         if authorizationStatus() == .notDetermined {
             videoDataOutputEnable = false
@@ -238,39 +295,50 @@ public class QRScannerView: UIView {
             }
         }
     }
-
+    
     private func setupBlurEffectView() {
         guard isBlurEffectEnabled else { return }
         blurEffectView.isHidden = true
         addSubview(blurEffectView)
     }
-
-    private func setupImageViews() {
-        let width = self.bounds.width * 0.618
+    
+    private func getFocusImageView() -> CGRect {
+        let width = UIDevice.isIpad ? 300 : self.bounds.width * 0.618
         let x = self.bounds.width * 0.191
         let y = self.bounds.height * 0.191
-        focusImageView = UIImageView(frame: CGRect(x: x, y: y, width: width, height: width))
+        return CGRect(x: x, y: y, width: width, height: width)
+    }
+    
+    private func updateFocusImageView() {
+        focusImageView.frame = getFocusImageView()
+        focusImageView.center = CGPoint(x: self.frame.size.width  / 2,
+                                        y: self.frame.size.height / 2)
+    }
+    
+    private func setupImageViews() {
+        focusImageView = UIImageView(frame: getFocusImageView())
+        
         focusImageView.image = focusImage ?? UIImage(named: "scan_qr_focus", in: .module, compatibleWith: nil)
         addSubview(focusImageView)
-
+        
         qrCodeImageView = UIImageView()
         qrCodeImageView.contentMode = .scaleAspectFill
         addSubview(qrCodeImageView)
     }
-
+    
     private func addPreviewLayer() {
         let previewLayer = AVCaptureVideoPreviewLayer(session: session)
         previewLayer.videoGravity = .resizeAspectFill
         previewLayer.frame = self.bounds
+        
         layer.addSublayer(previewLayer)
-
         self.previewLayer = previewLayer
     }
-
+    
     private func removePreviewLayer() {
         previewLayer?.removeFromSuperlayer()
     }
-
+    
     private func moveImageViews(qrCode: String, corners: [CGPoint]) {
         assert(Thread.isMainThread)
         
@@ -280,7 +348,7 @@ public class QRScannerView: UIView {
             path.addLine(to: $0)
         }
         path.close()
-
+        
         let aSide: CGFloat
         let bSide: CGFloat
         if corners[0].x < corners[1].x {
@@ -291,7 +359,7 @@ public class QRScannerView: UIView {
             bSide = corners[2].x - corners[1].x
         }
         let degrees = atan(aSide / bSide)
-
+        
         var maxSide: CGFloat =  hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y)
         for (i, _) in corners.enumerated() {
             if i == 3 { break }
@@ -299,7 +367,7 @@ public class QRScannerView: UIView {
             maxSide = side > maxSide ? side : maxSide
         }
         maxSide += focusImagePadding * 2
-
+        
         UIView.animate(withDuration: animationDuration, animations: { [weak self] in
             guard let strongSelf = self else { return }
             strongSelf.focusImageView.frame = path.bounds
@@ -307,27 +375,27 @@ public class QRScannerView: UIView {
             strongSelf.focusImageView.frame.size = CGSize(width: maxSide, height: maxSide)
             strongSelf.focusImageView.center = center
             strongSelf.focusImageView.transform = CGAffineTransform.identity.rotated(by: degrees)
-
+            
             strongSelf.qrCodeImageView.frame = path.bounds
             strongSelf.qrCodeImageView.center = center
-            }, completion: { [weak self] _ in
-                guard let strongSelf = self else { return }
-                strongSelf.qrCodeImageView.image = strongSelf.qrCodeImage
-                if strongSelf.isBlurEffectEnabled {
-                    strongSelf.blurEffectView.isHidden = false
-                }
-                strongSelf.success(qrCode)
+        }, completion: { [weak self] _ in
+            guard let strongSelf = self else { return }
+            strongSelf.qrCodeImageView.image = strongSelf.qrCodeImage
+            if strongSelf.isBlurEffectEnabled {
+                strongSelf.blurEffectView.isHidden = false
+            }
+            strongSelf.success(qrCode)
         })
     }
-
+    
     private func failure(_ error: QRScannerError) {
         delegate?.qrScannerView(self, didFailure: error)
     }
-
+    
     private func success(_ code: String) {
         delegate?.qrScannerView(self, didSuccess: code)
     }
-
+    
     private func didChangeTorchActive(isOn: Bool) {
         delegate?.qrScannerView(self, didChangeTorchActive: isOn)
     }
@@ -343,7 +411,7 @@ extension QRScannerView: AVCaptureMetadataOutputObjectsDelegate {
             guard let stringValue = readableObject.stringValue else { return }
             metadataOutputEnable = false
             videoDataOutputEnable = true
-
+            
             DispatchQueue.main.async { [weak self] in
                 guard let strongSelf = self else { return }
                 strongSelf.setTorchActive(isOn: false)
@@ -360,11 +428,11 @@ extension QRScannerView: AVCaptureVideoDataOutputSampleBufferDelegate {
         connection.videoOrientation = .portrait
         guard videoDataOutputEnable else { return }
         guard let qrCodeImage = getImageFromSampleBuffer(sampleBuffer: sampleBuffer) else { return }
-
+        
         self.qrCodeImage = qrCodeImage
         videoDataOutputEnable = false
     }
-
+    
     private func getImageFromSampleBuffer(sampleBuffer: CMSampleBuffer) -> UIImage? {
         let scale = UIScreen.main.scale
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
@@ -377,19 +445,19 @@ extension QRScannerView: AVCaptureVideoDataOutputSampleBufferDelegate {
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
         guard let context = CGContext(data: baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: bytesPerRow, space: colorSpace, bitmapInfo: bitmapInfo.rawValue) else { return nil }
         guard let cgImage = context.makeImage() else { return nil }
-
-        let sampleBuffer = UIImage(cgImage: cgImage, scale: scale, orientation: .up)
+        
+        let sampleBuffer = UIImage(cgImage: cgImage, scale: scale, orientation: .down)
         CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-
+        
         return readQRCode(sampleBuffer)
     }
-
+    
     private func readQRCode(_ image: UIImage) -> UIImage? {
         guard let ciImage = CIImage(image: image) else { return nil }
         let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
         guard let features = detector?.features(in: ciImage) else { return nil }
         guard let feature = features.first as? CIQRCodeFeature else { return nil }
-
+        
         let transform = CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: -ciImage.extent.size.height)
         let path = UIBezierPath()
         path.move(to: feature.topLeft.applying(transform))
@@ -405,15 +473,15 @@ private extension UIImage {
     func crop(_ path: UIBezierPath) -> UIImage? {
         let rect = CGRect(origin: CGPoint(), size: CGSize(width: size.width * scale, height: size.height * scale))
         UIGraphicsBeginImageContextWithOptions(rect.size, false, scale)
-
+        
         UIColor.clear.setFill()
         UIRectFill(rect)
         path.addClip()
         draw(in: rect)
-
+        
         let image = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
-
+        
         guard let croppedImage = image?.cgImage?.cropping(to: CGRect(x: path.bounds.origin.x * scale, y: path.bounds.origin.y * scale, width: path.bounds.size.width * scale, height: path.bounds.size.height * scale)) else { return nil }
         return UIImage(cgImage: croppedImage, scale: scale, orientation: imageOrientation)
     }
